@@ -1,9 +1,10 @@
 const { createDeck, shuffle } = require('./deck')
-const { getManilhaValue, resolveSubHand, resolveRound } = require('./rules')
+const { getManilhaValue, getCardStrength, resolveSubHand, resolveRound } = require('./rules')
 const {
   createTrocoDeck,
   getTrocoManilhaValue,
   getTombadoEffect,
+  getTrocoCardStrength,
   trocoResolveSubHand,
   detectTrincas,
   detectQuadra,
@@ -159,41 +160,45 @@ class GameEngine {
     })
   }
 
-  // Rule XVIII: resolve blackjack — called by server after showing hands
+  // Rule XVIII: resolve blackjack — individual totals, closest to 21 wins
   resolveBlackjack() {
     const { g } = this
     if (!g || !g.blackjackRound) return this._err('Não é uma rodada blackjack')
 
     const cardValue = (card) => {
-      if (card.special) return 0
+      if (!card || card.special) return 0
       if (['J', 'Q', 'K'].includes(card.value)) return 10
       if (card.value === 'A') return 1
       const n = parseInt(card.value)
       return isNaN(n) ? 0 : n
     }
 
-    const teamTotals = [0, 0]
-    const teamHands = { 0: [], 1: [] }
+    const playerTotals = {}
     for (const player of this.players) {
       const hand = g.hands[player.id] || []
-      const total = hand.reduce((sum, c) => sum + cardValue(c), 0)
-      teamTotals[player.team] += total
-      teamHands[player.team].push(...hand)
+      playerTotals[player.id] = hand.reduce((sum, c) => sum + cardValue(c), 0)
     }
 
-    // Closest to 21 without going over wins; both over → lower total wins; tie → null
-    const t0 = teamTotals[0]
-    const t1 = teamTotals[1]
+    // Individual: melhor jogador ≤21 vence; todos passaram → menor total vence
+    const nonBust = Object.entries(playerTotals).filter(([, t]) => t <= 21)
     let winner = null
-    if (t0 === t1) winner = null
-    else if (t0 > 21 && t1 > 21) winner = t0 < t1 ? 0 : 1
-    else if (t0 > 21) winner = 1
-    else if (t1 > 21) winner = 0
-    else winner = t0 > t1 ? 0 : 1
+    if (nonBust.length > 0) {
+      const bestVal = Math.max(...nonBust.map(([, t]) => t))
+      const best = nonBust.filter(([, t]) => t === bestVal)
+      const teams = new Set(best.map(([pid]) => this._teamOf(pid)))
+      winner = teams.size === 1 ? [...teams][0] : null
+    } else {
+      const bestVal = Math.min(...Object.values(playerTotals))
+      const best = Object.entries(playerTotals).filter(([, t]) => t === bestVal)
+      const teams = new Set(best.map(([pid]) => this._teamOf(pid)))
+      winner = teams.size === 1 ? [...teams][0] : null
+    }
+
+    const teamTotals = [0, 0]
+    for (const player of this.players) teamTotals[player.team] += playerTotals[player.id]
 
     const pts = g.roundValue
     if (winner !== null) this.scores[winner] += pts
-
     g.phase = 'round_end'
     this.maoIndex = (this.maoIndex + 1) % 4
     this.roundNum++
@@ -207,9 +212,19 @@ class GameEngine {
       points: pts,
       blackjack: true,
       teamTotals,
+      playerTotals,
       scores: [...this.scores],
       gameWinner,
     })
+  }
+
+  runMao23(playerId) {
+    const { g } = this
+    if (!g?.maoVinte3) return this._err('Não é mão de 23')
+    if (g.phase !== 'playing') return this._err('Não é possível correr agora')
+    const runnerTeam = this._teamOf(playerId)
+    const winnerTeam = runnerTeam === 0 ? 1 : 0
+    return this._forfeitRound(winnerTeam, g.roundValue, 'run')
   }
 
   playCard(playerId, cardId) {
@@ -222,7 +237,14 @@ class GameEngine {
     const idx = hand.findIndex(c => c.id === cardId)
     if (idx === -1) return this._err('Card not in hand')
 
+    // Quando a 1ª mão mela, obrigatório jogar a mais forte
+    if (g.subHandResults.length === 1 && g.subHandResults[0] === null) {
+      const strongest = hand.reduce((best, c) => this._cardStrength(c) > this._cardStrength(best) ? c : best)
+      if (cardId !== strongest.id) return this._err('Primeira mão melou — jogue sua carta mais forte!')
+    }
+
     const [card] = hand.splice(idx, 1)
+    g.trucoCalledBy = null
     const team = this._teamOf(playerId)
 
     // Rule V: Coringa 2 → revela a próxima carta do baralho
@@ -292,12 +314,15 @@ class GameEngine {
     const { g } = this
     if (g?.phase !== 'playing') return this._err('Cannot call truco now')
     if (g.pendingTruco) return this._err('Truco already pending')
+    if (this.currentPlayerId() !== playerId) return this._err('Só pode pedir truco na sua vez')
+    if (g.trucoCalledBy === playerId) return this._err('Já pediu truco nesta vez — jogue uma carta primeiro')
 
     const callerTeam = this._teamOf(playerId)
     const targetLevel = g.trucoLevel + 1
     if (targetLevel >= TRUCO_VALUES.length) return this._err('Already at maximum')
 
-    g.pendingTruco = { calledBy: playerId, calledByTeam: callerTeam, targetLevel }
+    g.trucoCalledBy = playerId
+    g.pendingTruco = { calledBy: playerId, calledByTeam: callerTeam, targetLevel, firstCaller: playerId }
     g.phase = 'truco_call'
 
     return this._ok('truco_called', {
@@ -335,11 +360,12 @@ class GameEngine {
     }
 
     if (response === 'raise') {
+      if (playerId === g.pendingTruco.firstCaller) return this._err('Você pediu truco — não pode pedir novamente')
       const nextLevel = targetLevel + 1
       if (nextLevel >= TRUCO_VALUES.length) return this._err('Cannot raise further')
       g.trucoLevel = targetLevel
       g.roundValue = TRUCO_VALUES[targetLevel]
-      g.pendingTruco = { calledBy: playerId, calledByTeam: responderTeam, targetLevel: nextLevel }
+      g.pendingTruco = { calledBy: playerId, calledByTeam: responderTeam, targetLevel: nextLevel, firstCaller: g.pendingTruco.firstCaller }
       return this._ok('truco_raised', {
         calledBy: playerId,
         calledByTeam: responderTeam,
@@ -405,6 +431,12 @@ class GameEngine {
     }
   }
 
+  _cardStrength(card) {
+    const { g } = this
+    if (this.isTroco) return getTrocoCardStrength(card, g.manilhaValue, g.tombadoEffect)
+    return getCardStrength(card, g.manilhaValue)
+  }
+
   currentPlayerId() {
     const { g } = this
     if (!g || g.phase !== 'playing') return null
@@ -433,8 +465,11 @@ class GameEngine {
     g.table = []
 
     if (winner !== null) {
-      const firstWinner = plays.find(p => p.team === winner)
-      const rotIdx = g.turnOrder.indexOf(firstWinner.playerId)
+      const winnerPlays = plays.filter(p => p.team === winner)
+      const strongest = winnerPlays.reduce((best, p) =>
+        this._cardStrength(p.card) > this._cardStrength(best.card) ? p : best
+      )
+      const rotIdx = g.turnOrder.indexOf(strongest.playerId)
       g.turnOrder = [...g.turnOrder.slice(rotIdx), ...g.turnOrder.slice(0, rotIdx)]
     }
     g.turnIdx = 0

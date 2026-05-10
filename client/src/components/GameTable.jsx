@@ -192,10 +192,9 @@ export default function GameTable({ initialPlayers, myId, mode, onLeave }) {
       }
       case 'round_end': {
         if (e.blackjack) {
-          const t0 = e.teamTotals?.[0] ?? '?'
-          const t1 = e.teamTotals?.[1] ?? '?'
+          const summary = players.map(p => `${p.name}: ${e.playerTotals?.[p.id] ?? '?'}`).join('  ')
           const winner = e.winnerTeam !== null ? `Time ${e.winnerTeam + 1} venceu` : 'Empate'
-          addLog(`🃏 Blackjack! Time 1: ${t0}  Time 2: ${t1}  → ${winner} (+${e.points}pts)`)
+          addLog(`🃏 Blackjack! ${summary}  → ${winner} (+${e.points}pts)`)
           setBlackjackResult(e)
           setTimeout(() => setBlackjackResult(null), 4000)
         } else if (e.reason === 'invictus_confirmed' || e.reason === 'invictus_wrong') {
@@ -265,6 +264,16 @@ export default function GameTable({ initialPlayers, myId, mode, onLeave }) {
           {LEVEL_NAMES[(state.trucoLevel ?? 0) + 1] ?? 'Truco'}!
         </button>
       )}
+      {state.maoVinte3 && state.phase === 'playing' && (
+        <button
+          onClick={() => socket.emit('run_mao23', {}, res => {
+            if (res?.error) addLog(`⚠ ${res.error}`)
+          })}
+          className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 border border-gray-500/40 text-white/70 text-xs font-bold rounded-lg transition-all active:scale-95"
+        >
+          Correr (pagar 5pts)
+        </button>
+      )}
       {state.mode === 'troco' && state.tombadoSwapTeam === me?.team && !state.tombadoSwapped && (
         <button
           onClick={() => socket.emit('swap_tombado', {}, res => {
@@ -301,28 +310,33 @@ export default function GameTable({ initialPlayers, myId, mode, onLeave }) {
       )}
       {blackjackResult && (
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-40 fade-in pointer-events-none">
-          <div className="bg-gray-900/95 border border-yellow-500/60 rounded-2xl px-8 py-6 text-center shadow-2xl max-w-xs w-[85vw]">
-            <div className="text-4xl mb-2">🃏</div>
+          <div className="bg-gray-900/95 border border-yellow-500/60 rounded-2xl px-6 py-5 text-center shadow-2xl max-w-xs w-[85vw]">
+            <div className="text-4xl mb-1">🃏</div>
             <div className="text-2xl font-display font-bold text-yellow-300 mb-3">Blackjack!</div>
-            <div className="flex justify-center gap-8 mb-3">
-              <div className="text-center">
-                <div className="text-[10px] text-blue-300/60 uppercase tracking-wider">Time 1</div>
-                <div className={`text-3xl font-bold font-mono ${blackjackResult.winnerTeam === 0 ? 'text-green-300' : 'text-white/50'}`}>
-                  {blackjackResult.teamTotals?.[0] ?? '?'}
-                </div>
-                {(blackjackResult.teamTotals?.[0] ?? 0) > 21 && <div className="text-[10px] text-red-400">passou</div>}
-              </div>
-              <div className="text-center">
-                <div className="text-[10px] text-red-300/60 uppercase tracking-wider">Time 2</div>
-                <div className={`text-3xl font-bold font-mono ${blackjackResult.winnerTeam === 1 ? 'text-green-300' : 'text-white/50'}`}>
-                  {blackjackResult.teamTotals?.[1] ?? '?'}
-                </div>
-                {(blackjackResult.teamTotals?.[1] ?? 0) > 21 && <div className="text-[10px] text-red-400">passou</div>}
-              </div>
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              {players.map(p => {
+                const total = blackjackResult.playerTotals?.[p.id] ?? '?'
+                const bust = typeof total === 'number' && total > 21
+                const isWinner = !bust && typeof total === 'number' &&
+                  blackjackResult.winnerTeam === p.team &&
+                  total === Math.max(...players
+                    .filter(x => x.team === p.team)
+                    .map(x => blackjackResult.playerTotals?.[x.id] ?? 0)
+                    .filter(t => t <= 21))
+                return (
+                  <div key={p.id} className={`rounded-lg px-3 py-2 border ${p.team === 0 ? 'border-blue-500/30 bg-blue-950/40' : 'border-red-500/30 bg-red-950/40'}`}>
+                    <div className="text-[10px] text-white/40 truncate">{p.name}</div>
+                    <div className={`text-2xl font-bold font-mono ${bust ? 'text-red-400' : isWinner ? 'text-green-300' : 'text-white/70'}`}>
+                      {total}
+                    </div>
+                    {bust && <div className="text-[9px] text-red-400">passou</div>}
+                  </div>
+                )
+              })}
             </div>
             {blackjackResult.winnerTeam !== null
-              ? <div className="text-green-300 font-bold">Time {blackjackResult.winnerTeam + 1} venceu! +{blackjackResult.points}pts</div>
-              : <div className="text-white/60 font-bold">Empate</div>
+              ? <div className="text-green-300 font-bold text-sm">Time {blackjackResult.winnerTeam + 1} venceu! +{blackjackResult.points}pts</div>
+              : <div className="text-white/60 font-bold text-sm">Empate</div>
             }
           </div>
         </div>

@@ -218,15 +218,20 @@ function detectQuadra(hands) {
 const SEQ_VALUES = VALUES // 4,5,6,7,Q,J,K,A,2,3
 
 function detectSequencia(hand, manilhaValue) {
+  const hasCoringa = hand.some(c => c.special === 'coringa1')
   const normal = hand
     .filter(c => !c.special && c.value !== manilhaValue)
     .map(c => SEQ_VALUES.indexOf(c.value))
     .filter(i => i >= 0)
     .sort((a, b) => a - b)
 
-  for (let i = 0; i + 1 < normal.length; i++) {
-    if (normal[i + 1] - normal[i] === 1) {
-      if (i + 2 < normal.length && normal[i + 2] - normal[i + 1] === 1) return true
+  for (let i = 0; i + 2 < normal.length; i++) {
+    if (normal[i+1] - normal[i] === 1 && normal[i+2] - normal[i+1] === 1) return true
+  }
+  // Coringa completa sequência (preenche gap ou estende par consecutivo)
+  if (hasCoringa && normal.length >= 2) {
+    for (let i = 0; i + 1 < normal.length; i++) {
+      if (normal[i+1] - normal[i] <= 2) return true
     }
   }
   return false
@@ -242,6 +247,7 @@ module.exports = {
   createTrocoDeck,
   getTrocoManilhaValue,
   getTombadoEffect,
+  getTrocoCardStrength,
   trocoResolveSubHand,
   detectTrincas,
   detectQuadra,

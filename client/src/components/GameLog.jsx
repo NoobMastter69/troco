@@ -20,5 +20,9 @@ export default function GameLog({ log }) {
 
 export function cardLabel(card) {
   if (!card) return '?'
-  return `${card.value}${SUIT_SYMBOL[card.suit]}`
+  if (card.special === 'zap2')          return 'Zap 2 (8♣)'
+  if (card.special === 'coringa1')      return 'Coringa 1'
+  if (card.special === 'coringa2')      return 'Coringa 2'
+  if (card.special === 'espada_espada') return 'Espada Espada'
+  return `${card.value}${SUIT_SYMBOL[card.suit] ?? ''}`
 }

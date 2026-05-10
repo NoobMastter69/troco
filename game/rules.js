@@ -34,17 +34,25 @@ function resolveRound(results, maoTeam) {
   const [h0, h1, h2] = results
 
   if (n >= 2) {
-    if (h0 === null && h1 !== null) return h1  // first draw -> second decides
-    if (h0 !== null && h0 === h1) return h0    // same team wins first two
+    if (h0 !== null && h1 === null) return h0  // 2ª mela → quem fez a 1ª vence
+    if (h0 === null && h1 !== null) return h1  // 1ª mela → 2ª decide
+    if (h0 !== null && h0 === h1)  return h0  // mesmo time vence as duas primeiras
   }
   if (n < 3) return undefined
 
-  // All 3 played
+  // 3ª mão jogada
+  if (h2 === null) {
+    // 3ª mela → quem venceu primeiro vence
+    if (h0 !== null) return h0
+    if (h1 !== null) return h1
+    return maoTeam
+  }
+
   const w0 = results.filter(r => r === 0).length
   const w1 = results.filter(r => r === 1).length
   if (w0 > w1) return 0
   if (w1 > w0) return 1
-  return maoTeam // all draws or equal -> mão wins
+  return maoTeam
 }
 
 module.exports = { getManilhaValue, getCardStrength, resolveSubHand, resolveRound, MANILHA_SUIT_RANK }

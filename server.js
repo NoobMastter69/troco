@@ -379,6 +379,19 @@ io.on('connection', socket => {
     cb?.({ ok: true })
   })
 
+  socket.on('run_mao23', (_, cb) => {
+    const roomId = socketToRoom.get(socket.id)
+    const room = rooms.get(roomId)
+    if (!room?.engine) return cb?.({ error: 'No active game' })
+
+    const result = room.engine.runMao23(socket.id)
+    if (!result.ok) return cb?.({ error: result.message })
+
+    broadcastGameState(room, result)
+    if (result.type === 'round_end') handleRoundEnd(room, result)
+    cb?.({ ok: true })
+  })
+
   socket.on('call_invictus', (_, cb) => {
     const roomId = socketToRoom.get(socket.id)
     const room = rooms.get(roomId)
