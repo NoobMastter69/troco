@@ -57,7 +57,7 @@ export default function GameTable({ initialPlayers, myId, mode, onLeave }) {
   const [trucoFeedback, setTrucoFeedback] = useState(null)
   const [blackjackResult, setBlackjackResult] = useState(null)
   const [asVermelho3Event, setAsVermelho3Event] = useState(null)
-  const [hideCards, setHideCards] = useState(false)
+  const [faceDownMode, setFaceDownMode] = useState(false)
   const [clipboardToast, setClipboardToast] = useState(false)
   const [scale, setScale] = useState(1)
   const [isMobile, setIsMobile] = useState(
@@ -182,7 +182,10 @@ export default function GameTable({ initialPlayers, myId, mode, onLeave }) {
       }
       case 'card_played': {
         const p = players.find(x => x.id === e.playerId)
-        if (e.coringa2Drawn) {
+        const isMe = e.playerId === myId
+        if (e.faceDown && !isMe) {
+          addLog(`${p?.name} jogou virado 🔲`)
+        } else if (e.coringa2Drawn) {
           addLog(`${p?.name} usou Coringa 2 → revelou ${cardLabel(e.coringa2Drawn)}`)
         } else {
           addLog(`${p?.name} jogou ${cardLabel(e.card)}`)
@@ -254,8 +257,9 @@ export default function GameTable({ initialPlayers, myId, mode, onLeave }) {
   }
 
   function playCard(cardId) {
-    socket.emit('play_card', { cardId }, res => {
+    socket.emit('play_card', { cardId, faceDown: faceDownMode }, res => {
       if (res?.error) addLog(`⚠ ${res.error}`)
+      else setFaceDownMode(false)
     })
   }
 
@@ -311,16 +315,20 @@ export default function GameTable({ initialPlayers, myId, mode, onLeave }) {
           🔄 Trocar Tombo
         </button>
       )}
-      <button
-        onClick={() => setHideCards(h => !h)}
-        className={`px-3 py-1.5 border text-xs font-bold rounded-lg transition-all active:scale-95 ${
-          hideCards
-            ? 'bg-gray-600 border-gray-400/60 text-white'
-            : 'bg-transparent border-white/15 text-white/35 hover:text-white/60 hover:border-white/25'
-        }`}
-      >
-        {hideCards ? '👁 Ver cartas' : '🙈 Ocultar'}
-      </button>
+      {isMyTurn && (
+        <button
+          onClick={() => setFaceDownMode(f => !f)}
+          disabled={!!state.hasSixAndSeven}
+          title={state.hasSixAndSeven ? 'Com 6+7 não pode jogar virado' : 'Jogar próxima carta virada'}
+          className={`px-3 py-1.5 border text-xs font-bold rounded-lg transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed ${
+            faceDownMode
+              ? 'bg-gray-600 border-gray-400/60 text-white'
+              : 'bg-transparent border-white/15 text-white/35 hover:text-white/60 hover:border-white/25'
+          }`}
+        >
+          {faceDownMode ? '🔲 Virado ON' : '🔲 Virado'}
+        </button>
+      )}
       <InvictusBar state={state} myTeam={me?.team} onLog={addLog} />
     </div>
   )
@@ -520,7 +528,7 @@ export default function GameTable({ initialPlayers, myId, mode, onLeave }) {
                 🌑 Escuro
               </div>
             )}
-            <PlayerHand hand={state.hand} isMyTurn={isMyTurn} onPlay={playCard} isDark={state.isDark} isHidden={hideCards} />
+            <PlayerHand hand={state.hand} isMyTurn={isMyTurn} onPlay={playCard} isDark={state.isDark} />
             {actionButtons}
           </div>
 
@@ -621,7 +629,7 @@ export default function GameTable({ initialPlayers, myId, mode, onLeave }) {
             </div>
           </div>
         )}
-        <PlayerHand hand={state.hand} isMyTurn={isMyTurn} onPlay={playCard} isDark={state.isDark} isHidden={hideCards} />
+        <PlayerHand hand={state.hand} isMyTurn={isMyTurn} onPlay={playCard} isDark={state.isDark} />
         {actionButtons}
       </div>
 

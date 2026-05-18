@@ -32,10 +32,11 @@ export default function TableCenter({ vira, manilhaValue, tombadoEffect, table, 
       <div className="flex gap-3 flex-wrap justify-center min-h-[60px] items-center">
         {table.map(play => {
           const player = players.find(p => p.id === play.playerId)
+          const isDown = !!play.card?.faceDown
           return (
             <div key={play.playerId} className="flex flex-col items-center gap-1">
-              <Card card={play.card} small />
-              <div className="text-[9px] text-white/40">{player?.name}</div>
+              <Card card={isDown ? null : play.card} isBack={isDown} small />
+              <div className="text-[9px] text-white/40">{player?.name}{isDown ? ' 🔲' : ''}</div>
             </div>
           )
         })}

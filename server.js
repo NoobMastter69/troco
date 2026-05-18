@@ -292,12 +292,12 @@ io.on('connection', socket => {
     cb?.({ ok: true })
   })
 
-  socket.on('play_card', ({ cardId }, cb) => {
+  socket.on('play_card', ({ cardId, faceDown = false }, cb) => {
     const roomId = socketToRoom.get(socket.id)
     const room = rooms.get(roomId)
     if (!room?.engine) return cb?.({ error: 'No active game' })
 
-    const result = room.engine.playCard(socket.id, cardId)
+    const result = room.engine.playCard(socket.id, cardId, faceDown)
     if (!result.ok) return cb?.({ error: result.message })
 
     broadcastGameState(room, result)

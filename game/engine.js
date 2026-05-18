@@ -228,11 +228,14 @@ class GameEngine {
     return this._forfeitRound(winnerTeam, g.roundValue, 'run')
   }
 
-  playCard(playerId, cardId) {
+  playCard(playerId, cardId, faceDown = false) {
     const { g } = this
     if (g?.phase !== 'playing') return this._err('Not in playing phase')
     if (g.blackjackRound) return this._err('Rodada blackjack — aguarde a resolução automática')
     if (this.currentPlayerId() !== playerId) return this._err('Not your turn')
+
+    // Com 6+7 não pode jogar virado
+    if (faceDown && g.sixAndSeven[playerId]) return this._err('Com 6+7 não pode jogar virado')
 
     const hand = g.hands[playerId]
     const idx = hand.findIndex(c => c.id === cardId)
@@ -259,12 +262,15 @@ class GameEngine {
       }
     }
 
-    g.table.push({ playerId, card: effectiveCard, team })
+    // Armazena a carta real na mesa (com flag faceDown para esconder dos outros)
+    g.table.push({ playerId, card: faceDown ? { ...effectiveCard, faceDown: true } : effectiveCard, team })
     g.turnIdx++
 
     if (g.table.length === 4) return this._resolveSubHand()
 
-    return this._ok('card_played', { playerId, card: effectiveCard, coringa2Drawn, nextPlayer: this.currentPlayerId() })
+    // No evento broadcast: esconde a carta dos adversários se for virada
+    const eventCard = faceDown ? { faceDown: true } : effectiveCard
+    return this._ok('card_played', { playerId, card: eventCard, faceDown: !!faceDown, coringa2Drawn: faceDown ? null : coringa2Drawn, nextPlayer: this.currentPlayerId() })
   }
 
   // ── Rule XIX: Invictus ────────────────────────────────────────────────
@@ -418,7 +424,12 @@ class GameEngine {
       maoEscura: !!g.maoEscura,
       maoVinte3: !!g.maoVinte3,
       handCounts: Object.fromEntries(Object.entries(g.hands).map(([pid, h]) => [pid, h.length])),
-      table: g.table.length > 0 ? g.table : (g.lastResolvedTable ?? []),
+      table: (g.table.length > 0 ? g.table : (g.lastResolvedTable ?? [])).map(entry =>
+        // Esconde cartas viradas dos outros durante a mão ativa; revela ao resolver
+        (g.table.length > 0 && entry.card?.faceDown && entry.playerId !== playerId)
+          ? { ...entry, card: { faceDown: true } }
+          : entry
+      ),
       tombadoSwapTeam: g.tombadoSwapTeam ?? null,
       tombadoSwapped: !!g.tombadoSwapped,
       quadra: g.quadra ?? null,
