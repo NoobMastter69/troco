@@ -480,9 +480,12 @@ class GameEngine {
   _resolveSubHand() {
     const { g } = this
 
+    // Cartas viradas são descarte — não entram na resolução
+    const activePlays = g.table.filter(p => !p.card?.faceDown)
+
     const winner = this.isTroco
-      ? trocoResolveSubHand(g.table, g.manilhaValue, g.tombadoEffect)
-      : resolveSubHand(g.table, g.manilhaValue)
+      ? trocoResolveSubHand(activePlays, g.manilhaValue, g.tombadoEffect)
+      : resolveSubHand(activePlays, g.manilhaValue)
 
     const plays = [...g.table]
     g.subHandResults.push(winner)
@@ -491,8 +494,8 @@ class GameEngine {
     g.table = []
 
     if (winner !== null) {
-      const winnerPlays = plays.filter(p => p.team === winner)
-      const strongest = winnerPlays.reduce((best, p) =>
+      const winnerActivePlays = activePlays.filter(p => p.team === winner)
+      const strongest = winnerActivePlays.reduce((best, p) =>
         this._cardStrength(p.card) > this._cardStrength(best.card) ? p : best
       )
       const rotIdx = g.turnOrder.indexOf(strongest.playerId)
