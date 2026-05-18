@@ -495,7 +495,6 @@ class GameEngine {
     let effectiveWinner = winnerTeam
 
     if (this.isTroco && sixSevenTeam !== null && winnerTeam !== null && winnerTeam !== sixSevenTeam) {
-      // 6+7 team PERDEU a rodada → "perde e leva" — eles ficam com os pontos
       effectiveWinner = sixSevenTeam
       reversed67 = true
     }
@@ -513,6 +512,18 @@ class GameEngine {
       this.scores[effectiveWinner] += pts
     }
 
+    // ── Rule XV: Ás + 3 Vermelho → +3 para o vencedor, -3 para o perdedor
+    let asVermelho3Applied = false
+    if (this.isTroco && g.asVermelho3 && effectiveWinner !== null) {
+      const loserTeam = effectiveWinner === 0 ? 1 : 0
+      this.scores[effectiveWinner] += 3
+      this.scores[loserTeam] = Math.max(-99, this.scores[loserTeam] - 3)
+      asVermelho3Applied = true
+    }
+
+    // Explicação legível do resultado
+    const explanation = this._buildRoundExplanation(g.subHandResults, effectiveWinner, reversed, reversed67)
+
     g.phase = 'round_end'
     this.maoIndex = (this.maoIndex + 1) % 4
     this.roundNum++
@@ -527,15 +538,42 @@ class GameEngine {
       points: pts,
       reversed,
       reversed67,
+      asVermelho3: asVermelho3Applied,
+      explanation,
       scores: [...this.scores],
       gameWinner,
       lastSubHand: { plays: lastPlays, winner: lastSubHandWinner },
     })
   }
 
+  _buildRoundExplanation(subHandResults, winnerTeam, reversed, reversed67) {
+    if (reversed67) return 'regra 6+7: perdeu e levou os pontos'
+    if (reversed) return '1ª mão empatou → tirou pontos do adversário'
+    if (winnerTeam === null) return 'empate'
+    const [h0, h1, h2] = subHandResults
+    const n = subHandResults.length
+    if (n >= 2 && h0 === winnerTeam && h1 === null) return '1ª mão ganha + 2ª empatou'
+    if (n >= 2 && h0 === null && h1 === winnerTeam) return '1ª mão empatou + ganhou a 2ª'
+    if (n >= 2 && h0 === winnerTeam && h1 === winnerTeam) return 'venceu as 2 primeiras mãos'
+    if (n === 3) {
+      const wins = subHandResults.filter(r => r === winnerTeam).length
+      return `venceu ${wins}/3 mãos`
+    }
+    return ''
+  }
+
   _forfeitRound(winnerTeam, pts, reason, message = null) {
     const { g } = this
     this.scores[winnerTeam] += pts
+
+    let asVermelho3Applied = false
+    if (this.isTroco && g.asVermelho3 && winnerTeam !== null) {
+      const loserTeam = winnerTeam === 0 ? 1 : 0
+      this.scores[winnerTeam] += 3
+      this.scores[loserTeam] = Math.max(-99, this.scores[loserTeam] - 3)
+      asVermelho3Applied = true
+    }
+
     g.phase = 'round_end'
     this.maoIndex = (this.maoIndex + 1) % 4
     this.roundNum++
@@ -543,7 +581,7 @@ class GameEngine {
     const gameWinner = this.scores[0] >= this.limit ? 0 : this.scores[1] >= this.limit ? 1 : null
     if (gameWinner !== null) g.phase = 'game_end'
 
-    return this._ok('round_end', { winnerTeam, points: pts, scores: [...this.scores], gameWinner, reason, message })
+    return this._ok('round_end', { winnerTeam, points: pts, scores: [...this.scores], gameWinner, reason, message, asVermelho3: asVermelho3Applied })
   }
 
   // ── Troço-specific helpers ───────────────────────────────────────────────
@@ -604,7 +642,8 @@ class GameEngine {
     return events
   }
 
-  // Rule XV: Ás + 3 Vermelho na mesma mão → rouba 3pts do adversário e troca a mão
+  // Rule XV: Ás + 3 Vermelho na mesma mão → revela todas as mãos, reembaralha tudo,
+  // e aplica +3 para o vencedor e -3 para o perdedor ao fim da rodada
   _detectAsVermelho3() {
     const { g } = this
     const events = []
@@ -614,18 +653,32 @@ class GameEngine {
       if (!hasAs || !hasRed3) continue
 
       const playerTeam = this._teamOf(pid)
-      const oppTeam    = playerTeam === 0 ? 1 : 0
-      this.scores[oppTeam] = Math.max(-99, this.scores[oppTeam] - 3)
 
-      const newHand = [g.deck.pop(), g.deck.pop(), g.deck.pop()].filter(Boolean)
-      if (newHand.length === 3) g.hands[pid] = newHand
+      // Captura mãos originais para revelar a todos
+      const revealedHands = {}
+      for (const [p, h] of Object.entries(g.hands)) revealedHands[p] = [...h]
+
+      // Devolve todas as mãos ao baralho e reembaralha
+      for (const h of Object.values(g.hands)) g.deck.push(...h)
+      g.deck = shuffle(g.deck)
+
+      // Distribui novas mãos para todos os jogadores
+      for (const p of Object.keys(g.hands)) {
+        const newHand = [g.deck.pop(), g.deck.pop(), g.deck.pop()].filter(Boolean)
+        if (newHand.length === 3) g.hands[p] = newHand
+      }
+
+      // Flag para aplicar bônus ao fim da rodada
+      g.asVermelho3 = { playerTeam }
 
       events.push({
         type: 'as_vermelho3',
         playerId: pid,
-        message: `Ás + 3 Vermelho! Time ${playerTeam + 1} tirou 3pts do adversário e recebeu nova mão.`,
+        revealedHands,
+        message: `Ás + 3 Vermelho! (Time ${playerTeam + 1}) Todas as mãos reveladas e reembaralhadas — +3 para o vencedor e -3 para o perdedor!`,
         scores: [...this.scores],
       })
+      break // só aplica uma vez por rodada
     }
     return events
   }

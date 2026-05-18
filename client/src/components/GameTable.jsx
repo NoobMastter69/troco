@@ -7,6 +7,7 @@ import Scoreboard from './Scoreboard.jsx'
 import TrucoDialog from './TrucoDialog.jsx'
 import GameLog from './GameLog.jsx'
 import { cardLabel } from './GameLog.jsx'
+import Card from './Card.jsx'
 import { TombadoEffectBanner, TrocoEventToast, TrocoInfoBadges } from './TrocoEffects.jsx'
 import InvictusBar from './InvictusBar.jsx'
 
@@ -55,6 +56,9 @@ export default function GameTable({ initialPlayers, myId, mode, onLeave }) {
   const [turnTimer, setTurnTimer] = useState(null)
   const [trucoFeedback, setTrucoFeedback] = useState(null)
   const [blackjackResult, setBlackjackResult] = useState(null)
+  const [asVermelho3Event, setAsVermelho3Event] = useState(null)
+  const [hideCards, setHideCards] = useState(false)
+  const [clipboardToast, setClipboardToast] = useState(false)
   const [scale, setScale] = useState(1)
   const [isMobile, setIsMobile] = useState(
     () => window.innerWidth < 600 && window.innerHeight > window.innerWidth
@@ -69,6 +73,20 @@ export default function GameTable({ initialPlayers, myId, mode, onLeave }) {
 
   // Mantém ref atualizado com o state mais recente para uso em closures de timer
   useEffect(() => { stateRef.current = state }, [state])
+
+  // Aviso de clipboard
+  useEffect(() => {
+    function handleCopy() {
+      setClipboardToast(true)
+      setTimeout(() => setClipboardToast(false), 2000)
+    }
+    document.addEventListener('copy', handleCopy)
+    document.addEventListener('cut', handleCopy)
+    return () => {
+      document.removeEventListener('copy', handleCopy)
+      document.removeEventListener('cut', handleCopy)
+    }
+  }, [])
 
   // Escala proporcional do canvas de jogo (desktop/landscape)
   useEffect(() => {
@@ -106,6 +124,10 @@ export default function GameTable({ initialPlayers, myId, mode, onLeave }) {
       setTrocoEvents(prev => [...prev, evt])
       if (evt.scores) setGameState(s => s ? { ...s, scores: evt.scores } : s)
       addLog(evt.message || `Evento Troço: ${evt.type}`)
+      if (evt.type === 'as_vermelho3') {
+        setAsVermelho3Event(evt)
+        setTimeout(() => setAsVermelho3Event(null), 6000)
+      }
     })
 
     socket.on('game_over', ({ winner, scores }) => {
@@ -200,16 +222,21 @@ export default function GameTable({ initialPlayers, myId, mode, onLeave }) {
         } else if (e.reason === 'invictus_confirmed' || e.reason === 'invictus_wrong') {
           // handled by invictus_resolved event
         } else if (e.reason === 'run') {
-          addLog(`Time ${e.winnerTeam + 1} ganhou ${e.points}pt (adversário correu)`)
+          addLog(`Time ${e.winnerTeam + 1} ganhou ${e.points}pt — adversário correu`)
           showTrucoFeedback(`🏃 Adversário correu! +${e.points}pt`, 'green')
         } else if (e.reason === 'sequencia_opponent_ran') {
-          addLog(`Sequência! Time ${e.winnerTeam + 1} ganhou 3pts`)
+          addLog(`Sequência! Time ${e.winnerTeam + 1} ganhou 3pts — adversário correu`)
         } else if (e.reversed67) {
-          addLog(`🎯 6+7 — Time ${e.winnerTeam + 1} perdeu e levou ${e.points}pt(s)!`)
+          addLog(`🎯 6+7 — Time ${e.winnerTeam + 1} perdeu e levou ${e.points}pt(s)! (regra 6+7)`)
         } else if (e.reversed) {
-          addLog(`↩️ Empate na 1ª mão — Time ${e.winnerTeam + 1} TIROU ${e.points}pts do adversário!`)
+          addLog(`↩️ 1ª mão empatou — Time ${e.winnerTeam + 1} TIROU ${e.points}pts do adversário!`)
         } else if (e.winnerTeam !== null) {
-          addLog(`✓ Time ${e.winnerTeam + 1} venceu (+${e.points}pts) | ${e.scores[0]}×${e.scores[1]}`)
+          const why = e.explanation ? ` (${e.explanation})` : ''
+          addLog(`✓ Time ${e.winnerTeam + 1} venceu (+${e.points}pts)${why} | ${e.scores[0]}×${e.scores[1]}`)
+        }
+        if (e.asVermelho3 && e.winnerTeam !== null) {
+          const loser = e.winnerTeam === 0 ? 1 : 0
+          addLog(`🃏 Ás+3 Vermelho: Time ${e.winnerTeam + 1} +3 extra | Time ${loser + 1} -3pts`)
         }
         if (!e.blackjack) setRoundResult(e)
         break
@@ -284,6 +311,16 @@ export default function GameTable({ initialPlayers, myId, mode, onLeave }) {
           🔄 Trocar Tombo
         </button>
       )}
+      <button
+        onClick={() => setHideCards(h => !h)}
+        className={`px-3 py-1.5 border text-xs font-bold rounded-lg transition-all active:scale-95 ${
+          hideCards
+            ? 'bg-gray-600 border-gray-400/60 text-white'
+            : 'bg-transparent border-white/15 text-white/35 hover:text-white/60 hover:border-white/25'
+        }`}
+      >
+        {hideCards ? '👁 Ver cartas' : '🙈 Ocultar'}
+      </button>
       <InvictusBar state={state} myTeam={me?.team} onLog={addLog} />
     </div>
   )
@@ -366,6 +403,35 @@ export default function GameTable({ initialPlayers, myId, mode, onLeave }) {
             ) : (
               <div className="text-2xl font-display font-bold text-white/70">Empate</div>
             )}
+          </div>
+        </div>
+      )}
+      {asVermelho3Event && (
+        <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 fade-in pointer-events-none">
+          <div className="bg-gray-900/95 border border-red-500/50 rounded-2xl px-6 py-5 text-center shadow-2xl max-w-sm w-full mx-4">
+            <div className="text-3xl mb-1">🃏</div>
+            <div className="text-xl font-display font-bold text-red-300 mb-1">Ás + 3 Vermelho!</div>
+            <div className="text-white/50 text-xs mb-3">Todas as mãos reveladas e reembaralhadas</div>
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              {players.map(p => (
+                <div key={p.id} className={`rounded-lg p-2 border ${p.team === 0 ? 'border-blue-500/30 bg-blue-950/40' : 'border-red-500/30 bg-red-950/40'}`}>
+                  <div className="text-[10px] text-white/40 truncate mb-1">{p.name}</div>
+                  <div className="flex gap-0.5 justify-center flex-wrap">
+                    {(asVermelho3Event.revealedHands?.[p.id] || []).map((c, i) => (
+                      <Card key={i} card={c} small />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="text-orange-300 text-xs font-semibold">+3 para o vencedor · -3 para o perdedor</div>
+          </div>
+        </div>
+      )}
+      {clipboardToast && (
+        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-50 pointer-events-none fade-in">
+          <div className="px-4 py-2 rounded-xl text-xs font-semibold bg-gray-800/90 border border-white/20 text-white/70 backdrop-blur-sm shadow-xl">
+            📋 Copiado para a área de transferência
           </div>
         </div>
       )}
@@ -454,7 +520,7 @@ export default function GameTable({ initialPlayers, myId, mode, onLeave }) {
                 🌑 Escuro
               </div>
             )}
-            <PlayerHand hand={state.hand} isMyTurn={isMyTurn} onPlay={playCard} isDark={state.isDark} />
+            <PlayerHand hand={state.hand} isMyTurn={isMyTurn} onPlay={playCard} isDark={state.isDark} isHidden={hideCards} />
             {actionButtons}
           </div>
 
@@ -555,7 +621,7 @@ export default function GameTable({ initialPlayers, myId, mode, onLeave }) {
             </div>
           </div>
         )}
-        <PlayerHand hand={state.hand} isMyTurn={isMyTurn} onPlay={playCard} isDark={state.isDark} />
+        <PlayerHand hand={state.hand} isMyTurn={isMyTurn} onPlay={playCard} isDark={state.isDark} isHidden={hideCards} />
         {actionButtons}
       </div>
 

@@ -1,6 +1,7 @@
 import Card from './Card.jsx'
 
-export default function PlayerHand({ hand, isMyTurn, onPlay, isDark = false }) {
+export default function PlayerHand({ hand, isMyTurn, onPlay, isDark = false, isHidden = false }) {
+  const showBack = isDark || isHidden
   return (
     <div className="flex items-end justify-center gap-2 px-4">
       {hand.map((card, i) => (
@@ -11,8 +12,8 @@ export default function PlayerHand({ hand, isMyTurn, onPlay, isDark = false }) {
         >
           <Card
             card={card}
-            isBack={isDark}
-            isHighlighted={isMyTurn && !isDark}
+            isBack={showBack}
+            isHighlighted={isMyTurn && !showBack}
             onClick={isMyTurn ? () => onPlay(card.id) : undefined}
           />
         </div>
