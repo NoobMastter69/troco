@@ -71,7 +71,8 @@ class GameEngine {
       sequencias: [],
       royalSequencia: [],
       sixAndSeven: {},     // { [playerId]: true } — private, never broadcast raw
-      partnerSignaled: {}, // { [signalerId]: partnerId } — who signaled whom
+      partnerSignaled: {}, // { [signalerId]: partnerId } — 6+7 signal
+      seqSignaled: {},     // { [signalerId]: partnerId } — sequência signal
     }
 
     // ── Troço: detect trincas, sequências, 6+7 after dealing ──
@@ -281,6 +282,19 @@ class GameEngine {
     return { ok: true, type: 'partner_signaled', partnerId: partner.id, signalerId: playerId }
   }
 
+  signalPartnerSeq(playerId) {
+    const { g } = this
+    if (!g || g.phase !== 'playing') return this._err('Not in playing phase')
+    if (!g.sequencias.includes(playerId)) return this._err('Você não tem sequência')
+
+    const myTeam = this._teamOf(playerId)
+    const partner = this.players.find(p => p.team === myTeam && p.id !== playerId)
+    if (!partner) return this._err('Sem parceiro')
+
+    g.seqSignaled[playerId] = partner.id
+    return { ok: true, type: 'seq_signaled', partnerId: partner.id, signalerId: playerId }
+  }
+
   callInvictus(playerId) {
     const { g } = this
     if (!g || !['playing', 'truco_call'].includes(g.phase)) return this._err('Não é possível chamar Invictus agora')
@@ -386,13 +400,13 @@ class GameEngine {
     const isDark = g.tombadoEffect === 'dark' || !!g.maoEscura
     const myTeam = this._teamOf(playerId)
 
-    // Sequência is secret — only the holding team sees it
-    const seqTeams = new Set(g.sequencias.map(pid => this._teamOf(pid)))
-    const myTeamHasSeq = seqTeams.has(myTeam)
-    const visibleSequencias = g.sequencias.filter(pid => this._teamOf(pid) === myTeam)
-    const visibleRoyalSeq  = g.royalSequencia.filter(pid => this._teamOf(pid) === myTeam)
-    // Hide the boosted round value from opponents (they just see 1 until scoring)
-    const visibleRoundValue = (g.sequencias.length > 0 && !myTeamHasSeq) ? 1 : g.roundValue
+    // Sequência is fully secret — only the holder sees it; partner only sees if signaled
+    const iSeqHolder    = g.sequencias.includes(playerId)
+    const seqSignaledMe = Object.values(g.seqSignaled || {}).includes(playerId)
+    const hasSeqInfo    = iSeqHolder || seqSignaledMe
+    const visibleRoyalSeq = g.royalSequencia.filter(pid => this._teamOf(pid) === myTeam)
+    // Hide the boosted round value from anyone without seq info
+    const visibleRoundValue = (g.sequencias.length > 0 && !hasSeqInfo) ? 1 : g.roundValue
 
     return {
       phase: g.phase,
@@ -419,9 +433,10 @@ class GameEngine {
       maoTeam: g.maoTeam,
       roundNum: this.roundNum,
       trincas: g.trincas,
-      sequencias: visibleSequencias,
+      sequencias: iSeqHolder ? [playerId] : [],
       royalSequencia: visibleRoyalSeq,
-      hasSequencia: g.sequencias.includes(playerId),
+      hasSequencia: iSeqHolder,
+      seqSignaledMe: seqSignaledMe,
       hasSixAndSeven: !!g.sixAndSeven[playerId],
       partnerSignaledMe: Object.values(g.partnerSignaled).includes(playerId),
       sixAndSevenActive: Object.keys(g.sixAndSeven).length > 0,

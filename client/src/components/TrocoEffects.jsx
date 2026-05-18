@@ -172,9 +172,14 @@ export function TrocoInfoBadges({ state }) {
           {TOMBADO_INFO[state.tombadoEffect].icon} {TOMBADO_INFO[state.tombadoEffect].title}
         </span>
       )}
-      {state.sequencias?.length > 0 && (
+      {state.hasSequencia && (
         <span className="text-[9px] bg-blue-800/60 text-blue-300 border border-blue-700/40 px-1.5 py-0.5 rounded">
-          🎯 Sequência ativa (12pts)
+          🎯 Seq (12pts) — sinalize!
+        </span>
+      )}
+      {state.seqSignaledMe && (
+        <span className="text-[9px] bg-blue-900/60 text-blue-200 border border-blue-700/40 px-1.5 py-0.5 rounded">
+          🎯 Parceiro tem seq (12pts)
         </span>
       )}
       {state.royalSequencia?.length > 0 && (

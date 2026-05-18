@@ -361,6 +361,22 @@ io.on('connection', socket => {
     cb?.({ ok: true })
   })
 
+  socket.on('signal_partner_seq', (_, cb) => {
+    const roomId = socketToRoom.get(socket.id)
+    const room = rooms.get(roomId)
+    if (!room?.engine) return cb?.({ error: 'No active game' })
+
+    const result = room.engine.signalPartnerSeq(socket.id)
+    if (!result.ok) return cb?.({ error: result.message })
+
+    // Send signal ONLY to the partner (private)
+    const partnerSocket = io.sockets.sockets.get(result.partnerId)
+    if (partnerSocket) {
+      partnerSocket.emit('seq_signal_received', { from: socket.id })
+    }
+    cb?.({ ok: true })
+  })
+
   socket.on('swap_tombado', (_, cb) => {
     const roomId = socketToRoom.get(socket.id)
     const room = rooms.get(roomId)
