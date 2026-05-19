@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "concurrently \"node --watch server.js\" \"npm run dev --prefix client\"",
     "start": "node server.js",
-    "build": "npm install --prefix client && npm run build --prefix client"
+    "build": "npm install --include=dev --prefix client && npm run build --prefix client"
   },
   "dependencies": {
     "express": "^4.18.2",
